@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'panamurang@gmail.com'
+      );
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      function isValidUser(data) {
+        return data.uid is string && data.uid == request.auth.uid &&
+               data.email is string && data.email.size() <= 256 &&
+               data.role in ['user', 'admin'] &&
+               (data.displayName == null || (data.displayName is string && data.displayName.size() <= 128));
+      }
+
+      allow create: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().role == 'user' &&
+                    incoming().createdAt == request.time;
+      
+      allow update: if isOwner(userId) && isValidUser(incoming()) &&
+                    incoming().role == existing().role && // Prevent self-promotion
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().updatedAt == request.time &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']);
+      
+      allow update: if isAdmin() && 
+                    incoming().diff(existing()).affectedKeys().hasAny(['role']) &&
+                    incoming().updatedAt == request.time;
+    }
+
+    // --- Conversations ---
+    match /users/{userId}/conversations/{convId} {
+      allow read: if isOwner(userId) || isAdmin();
+      
+      function isValidConv(data) {
+        return data.userId == request.auth.uid &&
+               data.agentId is string && data.agentId.size() <= 64;
+      }
+
+      allow create: if isOwner(userId) && isValidConv(incoming()) && 
+                    incoming().createdAt == request.time;
+      
+      allow update: if isOwner(userId) && isValidConv(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt']) &&
+                    incoming().updatedAt == request.time;
+      
+      allow delete: if isOwner(userId) || isAdmin();
+
+      // --- Messages ---
+      match /messages/{msgId} {
+        allow read: if isOwner(userId) || isAdmin();
+        
+        function isValidMessage(data) {
+          return data.role in ['user', 'model'] &&
+                 data.content is string && data.content.size() <= 10000;
+        }
+
+        allow create: if isOwner(userId) && isValidMessage(incoming()) &&
+                      incoming().timestamp == request.time;
+        
+        // Messages are immutable
+        allow update, delete: if false;
+      }
+    }
+
+    // --- Waitlist ---
+    match /waitlist/{entryId} {
+      allow create: if incoming().email is string && incoming().email.size() <= 256 &&
+                    incoming().status == 'pending' &&
+                    incoming().signupDate == request.time;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // --- Event Logs ---
+    match /event_logs/{logId} {
+      allow create: if isSignedIn(); // System logic writes these, but client can trigger
+      allow read, update, delete: if isAdmin();
+    }
+
+    // --- AI Response Cache ---
+    match /response_cache/{cacheId} {
+      allow read: if isSignedIn();
+      function isValidCache(data) {
+        return data.agentId is string && data.agentId.size() <= 64 &&
+               data.promptHash is string && data.promptHash.size() <= 128 &&
+               data.response is string && data.response.size() <= 30000;
+      }
+      allow create: if isVerified() && isValidCache(incoming()) && 
+                    incoming().createdAt == request.time &&
+                    incoming().usageCount == 1;
+      
+      allow update: if isVerified() && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['usageCount', 'lastHit']) &&
+                    incoming().usageCount == existing().usageCount + 1 &&
+                    incoming().lastHit == request.time;
+    }
+
+    // --- Service Analytics ---
+    match /service_analytics/{agentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    
+    // Admin list
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Managed via GCP console or separate internal tool
+    }
+  }
+}

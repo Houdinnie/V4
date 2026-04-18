@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Information about a registered user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A single message in a conversation",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "content", "timestamp"]
+    },
+    "Conversation": {
+      "title": "Agent Conversation",
+      "description": "A conversation thread with a specific agent",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "agentId": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "agentId", "updatedAt"]
+    },
+    "WaitlistEntry": {
+      "title": "Waitlist Signup",
+      "description": "A user interested in the platform",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "signupDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      },
+      "required": ["email", "signupDate", "status"]
+    },
+    "EventLog": {
+      "title": "Platform Event Log",
+      "description": "Immutable audit trail of platform events",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "userId": { "type": "string" },
+        "payload": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "timestamp"]
+    },
+    "ServiceUsage": {
+      "title": "Service Analytics",
+      "description": "Tracking usage counts for agents",
+      "type": "object",
+      "properties": {
+        "agentId": { "type": "string" },
+        "count": { "type": "integer" },
+        "lastUsed": { "type": "string", "format": "date-time" }
+      },
+      "required": ["agentId", "count"]
+    },
+    "AIResponseCache": {
+      "title": "AI Response Cache",
+      "description": "Cached responses for common AI queries to reduce costs and latency",
+      "type": "object",
+      "properties": {
+        "agentId": { "type": "string" },
+        "promptHash": { "type": "string" },
+        "normalizedPrompt": { "type": "string" },
+        "response": { "type": "string" },
+        "usageCount": { "type": "integer" },
+        "lastHit": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["agentId", "promptHash", "response"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/users/{userId}/conversations/{convId}": {
+      "schema": "Conversation",
+      "description": "Main conversation metadata"
+    },
+    "/users/{userId}/conversations/{convId}/messages/{msgId}": {
+      "schema": "ChatMessage",
+      "description": "Messages within a conversation"
+    },
+    "/waitlist/{entryId}": {
+      "schema": "WaitlistEntry",
+      "description": "Public waitlist signups"
+    },
+    "/event_logs/{logId}": {
+      "schema": "EventLog",
+      "description": "System event logs"
+    },
+    "/service_analytics/{agentId}": {
+      "schema": "ServiceUsage",
+      "description": "Aggregated usage statistics"
+    },
+    "/response_cache/{cacheId}": {
+      "schema": "AIResponseCache",
+      "description": "Cached AI completions"
+    }
+  }
+}

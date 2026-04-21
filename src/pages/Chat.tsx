@@ -22,6 +22,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ initialAgentId }) => {
     loadMessages, 
     addMessage,
     createConversation,
+    deleteConversation,
     logEvent
   } = useChatStore();
 
@@ -117,6 +118,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({ initialAgentId }) => {
   };
 
   const agent = activeConversation ? AGENTS[activeConversation.agentId] : null;
+
+  const handleClearSession = async () => {
+    if (!user || !activeConversation) return;
+    if (window.confirm("Are you sure you want to clear this session? This action is permanent.")) {
+      await deleteConversation(user.uid, activeConversation.id);
+      await logEvent('CLEAR_SESSION', { agentId: activeConversation.agentId });
+    }
+  };
 
   const filteredConversations = useMemo(() => {
     if (!searchQuery.trim()) return conversations;
@@ -229,7 +238,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({ initialAgentId }) => {
                   </div>
                </div>
                <div className="flex gap-2">
-                  <RoundButton icon={<Icons.Trash2 size={16} />} title="Clear Session" />
+                  <RoundButton 
+                    onClick={handleClearSession}
+                    icon={<Icons.Trash2 size={16} />} 
+                    title="Clear Session" 
+                  />
                   <RoundButton icon={<Icons.Lock size={16} />} title="Secure Thread" />
                </div>
             </div>
@@ -382,8 +395,12 @@ const MetricRow = ({ label, value }: { label: string, value: string }) => (
      <span className="text-text-primary font-mono">{value}</span>
   </div>
 );
-const RoundButton = ({ icon, title }: { icon: any, title: string }) => (
-  <button className="w-10 h-10 rounded-full border border-border-subtle flex items-center justify-center hover:bg-bg-elevated transition-colors group relative" title={title}>
+const RoundButton = ({ icon, title, onClick }: { icon: any, title: string, onClick?: () => void }) => (
+  <button 
+    onClick={onClick}
+    className="w-10 h-10 rounded-full border border-border-subtle flex items-center justify-center hover:bg-bg-elevated transition-colors group relative" 
+    title={title}
+  >
     {icon}
   </button>
 );

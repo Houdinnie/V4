@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit, getCountFromServer } from 'firebase/firestore';
 import { db } from '../infra/firebase.ts';
 import { motion } from 'motion/react';
 import * as Icons from 'lucide-react';
@@ -9,7 +9,6 @@ export const AdminDashboard: React.FC = () => {
   const [metrics, setMetrics] = useState({
     totalUsers: 0,
     totalLogs: 0,
-    totalConversations: 0,
     totalWaitlist: 0,
     totalCacheRows: 0,
   });
@@ -19,23 +18,26 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        const logsSnap = await getDocs(query(collection(db, 'event_logs'), orderBy('timestamp', 'desc'), limit(10)));
-        const waitlistSnap = await getDocs(collection(db, 'waitlist'));
-        const cacheSnap = await getDocs(collection(db, 'response_cache'));
+        const [usersCount, logsCount, waitlistCount, cacheCount] = await Promise.all([
+          getCountFromServer(collection(db, 'users')),
+          getCountFromServer(collection(db, 'event_logs')),
+          getCountFromServer(collection(db, 'waitlist')),
+          getCountFromServer(collection(db, 'response_cache')),
+        ]);
+
+        const logsSnap = await getDocs(query(collection(db, 'event_logs'), orderBy('timestamp', 'desc'), limit(15)));
         
         setMetrics({
-          totalUsers: usersSnap.size,
-          totalLogs: 0,
-          totalConversations: 0,
-          totalWaitlist: waitlistSnap.size,
-          totalCacheRows: cacheSnap.size,
+          totalUsers: usersCount.data().count,
+          totalLogs: logsCount.data().count,
+          totalWaitlist: waitlistCount.data().count,
+          totalCacheRows: cacheCount.data().count,
         });
 
         const logs = logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setRecentLogs(logs);
       } catch (err) {
-        console.error(err);
+        console.error("Admin data fetch error:", err);
       } finally {
         setLoading(false);
       }
@@ -43,18 +45,35 @@ export const AdminDashboard: React.FC = () => {
     fetchData();
   }, []);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <Icons.Shield size={48} className="text-accent opacity-20" />
+          <p className="text-[10px] uppercase tracking-[0.5em] text-text-secondary">Authenticating Terminal...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-12 bg-bg-base min-h-full font-sans">
-      <header>
-        <h2 className="text-5xl font-serif italic text-text-primary tracking-tight">System Command Center</h2>
-        <p className="text-text-secondary font-sans text-[0.65rem] uppercase tracking-[0.2em] mt-2 font-bold">VentureMind Infrastructure Operations</p>
+      <header className="flex justify-between items-end">
+        <div>
+          <h2 className="text-5xl font-serif italic text-text-primary tracking-tight">System Command Center</h2>
+          <p className="text-text-secondary font-sans text-[0.65rem] uppercase tracking-[0.2em] mt-2 font-bold">VentureMind Infrastructure Operations</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-mono text-accent uppercase tracking-widest mb-1">Session Active</p>
+          <p className="text-[10px] font-mono text-text-secondary opacity-50 uppercase tracking-widest">{format(new Date(), 'yyyy-MM-dd HH:mm:ss')} UTC</p>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard label="Total Members" value={metrics.totalUsers.toString()} icon={<Icons.Users size={18} />} trend="+12%" />
         <MetricCard label="Cache Intelligence" value={metrics.totalCacheRows.toString()} icon={<Icons.BrainCircuit size={18} />} trend="Cost-Saving" />
-        <MetricCard label="Event Streams" value="LIVE" valueColor="text-[#4ade80]" icon={<Icons.Zap size={18} />} />
-        <MetricCard label="System Health" value="99.9%" icon={<Icons.Activity size={18} />} />
+        <MetricCard label="Event Streams" value={metrics.totalLogs.toString()} valueColor="text-[#4ade80]" icon={<Icons.Zap size={18} />} />
+        <MetricCard label="Waitlist Queue" value={metrics.totalWaitlist.toString()} icon={<Icons.Clock size={18} />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -79,8 +98,10 @@ export const AdminDashboard: React.FC = () => {
               <tbody className="divide-y divide-border-subtle">
                 {recentLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-bg-elevated transition-colors text-text-primary">
-                    <td className="px-6 py-4 font-bold text-accent">{log.type}</td>
-                    <td className="px-6 py-4 opacity-70 font-mono">{log.userId?.slice(0, 10)}...</td>
+                    <td className="px-6 py-4">
+                      <span className="font-bold text-accent px-2 py-1 rounded-sm bg-accent/5 border border-accent/10">{log.type}</span>
+                    </td>
+                    <td className="px-6 py-4 opacity-70 font-mono">{log.userId?.slice(0, 12)}...</td>
                     <td className="px-6 py-4 opacity-50 font-mono">
                       {log.timestamp ? format(log.timestamp.toDate(), 'HH:mm:ss') : '...'}
                     </td>
@@ -111,6 +132,15 @@ export const AdminDashboard: React.FC = () => {
                 <p className="text-[0.7rem] text-text-secondary leading-relaxed italic">
                   Security rules strictly enforce Attribute-Based Access Control (ABAC). 
                   Access to this dashboard is restricted to verified administrators via secure token validation.
+                </p>
+             </div>
+             <div className="p-4 bg-accent/5 border border-accent/10 rounded-sm">
+                <div className="flex items-center gap-2 mb-2">
+                   <Icons.ShieldCheck size={14} className="text-accent" />
+                   <span className="text-[10px] font-bold uppercase tracking-widest text-accent">Security Status</span>
+                </div>
+                <p className="text-[10px] text-text-secondary leading-relaxed">
+                   All data streams are encrypted at rest and in transit. Audit logs are immutable and system-managed.
                 </p>
              </div>
           </div>

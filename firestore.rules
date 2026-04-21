@@ -41,22 +41,32 @@ service cloud.firestore {
         return data.uid is string && data.uid == request.auth.uid &&
                data.email is string && data.email.size() <= 256 &&
                data.role in ['user', 'admin'] &&
-               (data.displayName == null || (data.displayName is string && data.displayName.size() <= 128));
+               (data.displayName == null || (data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 128)) &&
+               (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 512));
       }
 
       allow create: if isOwner(userId) && isValidUser(incoming()) && 
                     incoming().role == 'user' &&
-                    incoming().createdAt == request.time;
+                    incoming().createdAt == request.time &&
+                    !incoming().keys().hasAny(['updatedAt']);
       
       allow update: if isOwner(userId) && isValidUser(incoming()) &&
                     incoming().role == existing().role && // Prevent self-promotion
-                    incoming().createdAt == existing().createdAt &&
+                    incoming().email == existing().email && // Email is immutable
+                    incoming().uid == existing().uid && // UID is immutable
+                    incoming().createdAt == existing().createdAt && // Creation timestamp is immutable
                     incoming().updatedAt == request.time &&
                     incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']);
       
       allow update: if isAdmin() && 
-                    incoming().diff(existing()).affectedKeys().hasAny(['role']) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']) &&
                     incoming().updatedAt == request.time;
+    }
+
+    // --- Service Analytics ---
+    match /service_analytics/{agentId} {
+      allow read: if isSignedIn();
+      allow write: if false; // System-managed only
     }
 
     // --- Conversations ---
@@ -65,15 +75,18 @@ service cloud.firestore {
       
       function isValidConv(data) {
         return data.userId == request.auth.uid &&
-               data.agentId is string && data.agentId.size() <= 64;
+               data.agentId is string && data.agentId.size() <= 64 &&
+               data.agentId in ['ideator', 'legal', 'nomad', 'luxury', 'hotel', 'fundraising', 'tax', 'visa', 'wealth', 'branding'];
       }
 
       allow create: if isOwner(userId) && isValidConv(incoming()) && 
-                    incoming().createdAt == request.time;
+                    incoming().createdAt == request.time &&
+                    !incoming().keys().hasAny(['deleted', 'lastMessage']);
       
-      allow update: if isOwner(userId) && isValidConv(incoming()) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt']) &&
-                    incoming().updatedAt == request.time;
+      allow update: if isOwner(userId) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'deleted']) &&
+                    incoming().updatedAt == request.time &&
+                    (incoming().deleted != true || incoming().deleted == existing().get('deleted', false));
       
       allow delete: if isOwner(userId) || isAdmin();
 
@@ -83,14 +96,16 @@ service cloud.firestore {
         
         function isValidMessage(data) {
           return data.role in ['user', 'model'] &&
-                 data.content is string && data.content.size() <= 10000;
+                 data.content is string && data.content.size() > 0 && data.content.size() <= 10000;
         }
 
         allow create: if isOwner(userId) && isValidMessage(incoming()) &&
-                      incoming().timestamp == request.time;
+                      incoming().timestamp == request.time &&
+                      !incoming().keys().hasAny(['id', 'edited', 'deleted']);
         
-        // Messages are immutable
-        allow update, delete: if false;
+        // Messages are immutable (no updates or deletes allowed)
+        allow update: if false;
+        allow delete: if false;
       }
     }
 
@@ -124,12 +139,6 @@ service cloud.firestore {
                     incoming().diff(existing()).affectedKeys().hasOnly(['usageCount', 'lastHit']) &&
                     incoming().usageCount == existing().usageCount + 1 &&
                     incoming().lastHit == request.time;
-    }
-
-    // --- Service Analytics ---
-    match /service_analytics/{agentId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
     }
     
     // Admin list

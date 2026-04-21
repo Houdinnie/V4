@@ -100,6 +100,7 @@ interface ChatState {
   loadMessages: (userId: string, convId: string) => () => void;
   addMessage: (userId: string, convId: string, role: 'user' | 'model', content: string) => Promise<void>;
   createConversation: (userId: string, agentId: AgentId) => Promise<string>;
+  deleteConversation: (userId: string, convId: string) => Promise<void>;
   logEvent: (type: string, payload: any) => Promise<void>;
 }
 
@@ -112,6 +113,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadConversations: (userId) => {
     const q = query(
       collection(db, 'users', userId, 'conversations'),
+      where('deleted', '!=', true),
+      orderBy('deleted'),
       orderBy('updatedAt', 'desc')
     );
     return onSnapshot(q, (snap) => {
@@ -167,11 +170,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createConversation: async (userId, agentId) => {
     const convsRef = collection(db, 'users', userId, 'conversations');
     const docRef = await addDoc(convsRef, {
+      userId,
       agentId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
     return docRef.id;
+  },
+
+  deleteConversation: async (userId, convId) => {
+    const convRef = doc(db, 'users', userId, 'conversations', convId);
+    await updateDoc(convRef, { deleted: true }); // Soft delete for audit
+    set({ activeConversation: null, messages: [] });
   },
 
   logEvent: async (type, payload) => {

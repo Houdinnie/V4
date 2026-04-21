@@ -9,17 +9,28 @@ export const ProfilePage: React.FC = () => {
   const [photoURL, setPhotoURL] = useState(user?.photoURL || '');
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setSuccess(false);
+    setError(null);
     try {
-      await updateProfile({ displayName, photoURL });
+      if (displayName && displayName.length > 128) {
+        setError('Display name must be less than 128 characters.');
+        return;
+      }
+      if (photoURL && photoURL.length > 512) {
+        setError('Avatar URL must be less than 512 characters.');
+        return;
+      }
+      await updateProfile({ displayName: displayName || undefined, photoURL: photoURL || undefined });
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to update profile:', err);
+      setError('Failed to update profile. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -83,13 +94,24 @@ export const ProfilePage: React.FC = () => {
            </div>
         </div>
 
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm flex items-center gap-3"
+          >
+            <Icons.AlertCircle size={18} />
+            {error}
+          </motion.div>
+        )}
+
         <div className="pt-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
                {success && (
                  <motion.div 
                    initial={{ opacity: 0, x: -10 }} 
                    animate={{ opacity: 1, x: 0 }} 
-                   className="flex items-center gap-2 text-[#4ade80] text-xs font-bold font-sans"
+                   className="flex items-center gap-2 text-green-400 text-xs font-bold font-sans"
                  >
                    <Icons.CheckCircle size={14} /> Profile Synchronized
                  </motion.div>

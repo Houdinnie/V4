@@ -44,10 +44,12 @@ export interface Message {
 
 export interface Conversation {
   id: string;
+  userId: string;
   agentId: AgentId;
   lastMessage?: string;
   updatedAt: number;
   createdAt: number;
+  deleted?: boolean;
 }
 
 export const UserSchema = z.object({
